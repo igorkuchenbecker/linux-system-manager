@@ -1,0 +1,51 @@
+# systemd --user unit for linux-system-managerd.
+#
+# This is a per-user service (not a system-wide one): the daemon needs
+# no elevated privileges — it only reads /proc and /sys (world-readable
+# for the data this project collects) and listens on a Unix socket
+# under $XDG_RUNTIME_DIR — so running it as your own user, managed by
+# `systemctl --user`, is the correct least-privilege fit. There is
+# deliberately no system-wide (root, /etc/systemd/system) unit shipped.
+#
+# Install (after `make install`, which places `linuxmngd` in ~/.local/bin):
+#   mkdir -p ~/.config/systemd/user
+#   cp config/linux-system-managerd.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now linux-system-managerd
+#
+# Logs: journalctl --user -u linux-system-managerd -f
+
+[Unit]
+Description=Linux System Manager collector daemon
+Documentation=file:///usr/local/share/doc/linux-system-manager/README.md
+
+[Service]
+Type=simple
+# %h/.local/bin is where `make install` places `linuxmngd` by default
+# (PREFIX=~/.local). If you installed with a different PREFIX, update
+# this path to match.
+ExecStart=%h/.local/bin/linuxmngd
+Restart=on-failure
+RestartSec=2
+
+# Least-privilege hardening (see docs, Phase 12): this daemon needs no
+# elevated capabilities, no write access outside its own runtime
+# socket, and no network at all (Unix domain socket only).
+#
+# ProtectSystem=strict makes the entire filesystem read-only, INCLUDING
+# %t ($XDG_RUNTIME_DIR) where the daemon's socket lives — verified by
+# actually running this unit: without the ReadWritePaths=%t line below,
+# bind(2) fails with EROFS and the service crash-loops. This is exactly
+# why every hardening directive in this file was checked against a real
+# `systemctl --user start`, not just `systemd-analyze verify` (which
+# does not catch this class of runtime-only sandboxing conflict).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=%t
+ProtectHome=read-only
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=default.target
