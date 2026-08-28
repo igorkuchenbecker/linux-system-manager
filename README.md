@@ -1,76 +1,71 @@
 # Linux System Manager
 
-A system monitor, hardware monitor, and process manager for Linux,
-written in C. It reads `/proc`, `/sys`, and standard syscalls directly
-instead of parsing the output of `top`, `free`, `lsblk`, or `sensors`.
+Monitor de sistema, hardware e processos para Linux, escrito em C puro. Lê `/proc`,
+`/sys` e syscalls diretamente do kernel — não interpreta a saída de `top`, `free`,
+`lsblk` ou `sensors`.
 
-Ships as three things: a terminal UI, a one-shot CLI snapshot, and an
-optional background daemon that other clients can query over a Unix
-socket.
+Entrega três coisas: uma interface de terminal (TUI), um snapshot único via CLI e um
+daemon opcional que outros clientes consultam por socket Unix.
 
-## Features
+## Finalidade
 
-- **System info** — hostname, kernel, distro, CPU model, RAM, uptime
-- **CPU** — total and per-core usage, load average, per-core frequency
-- **Memory** — RAM and swap, with a correct used/available split (not
-  the naive "total minus free")
-- **Processes** — list, sort by CPU or memory, `kill` / `SIGKILL` /
-  renice, right from the TUI
-- **Disk** — mounted filesystem capacity/usage and per-device read/write
-  throughput
-- **Network** — per-interface traffic and link state
-- **Sensors** — temperature, fan speed, voltage, power, wherever the
-  kernel exposes them
-- **GPU** — NVIDIA (via NVML), AMD (via amdgpu sysfs), and basic
-  identification for Intel/other vendors
-- **Daemon + IPC** — `linuxmngd` samples everything in the background
-  and serves it over a Unix socket, so a client doesn't have to re-scan
-  `/proc` on every request
+Acompanhar o estado da máquina — CPU, memória, discos, rede, sensores, GPU e
+processos — sem shell out para outras ferramentas e sem depender delas para nada.
+Útil para diagnóstico rápido, monitoramento contínuo em segundo plano (via daemon)
+e gerenciamento de processos direto da linha de comando.
 
-## Requirements
+## Como funciona
 
-- Linux, x86_64
-- GCC or Clang, GNU Make
-- `ncursesw` (for the TUI)
+- **System info** — hostname, kernel, distro, CPU, RAM, uptime
+- **CPU** — uso total e por núcleo, load average, frequência por núcleo
+- **Memória** — RAM e swap com divisão correta usada/disponível (não o "total menos
+  free" ingênuo)
+- **Processos** — listar, ordenar por CPU/memória, `kill`/`SIGKILL`/renice pela TUI
+- **Disco** — capacidade/uso dos filesystems montados e vazão read/write por dispositivo
+- **Rede** — tráfego e estado por interface
+- **Sensores** — temperatura, fan, voltagem e potência onde o kernel expõe
+- **GPU** — NVIDIA (via NVML), AMD (via sysfs amdgpu) e identificação básica de outros
+  fabricantes
+- **Daemon + IPC** — `linuxmngd` amostra tudo em segundo plano e serve por socket Unix,
+  sem re-escaneamento de `/proc` a cada pedido
 
-Nothing else is required to build. The NVIDIA GPU backend loads
-`libnvidia-ml.so` at runtime if it's present and simply reports no
-NVIDIA GPU if it isn't — no build-time dependency either way.
+Coletores, núcleo e UI são separados: a TUI não sabe como `/proc/stat` é formatado, e
+o módulo de CPU não sabe que a ncurses existe. Dado ausente vira "N/A" em vez de
+crashar.
 
-## Build & install
+## Como rodar
 
 ```sh
-make               # builds bin/linux-system-manager and bin/linux-system-managerd
-make install       # installs as ~/.local/bin/linuxmng and linuxmngd (no root needed)
+make               # builda bin/linux-system-manager e bin/linux-system-managerd
+make install       # instala em ~/.local/bin/linuxmng e linuxmngd (sem root)
 ```
 
-Once installed:
+Depois de instalado:
 
 ```sh
-linuxmng           # opens the TUI
-linuxmng --cli     # one-shot text snapshot instead
-linuxmngd &        # start the background daemon
-linuxmng --daemon  # fetch a snapshot from the daemon over IPC
+linuxmng           # abre a TUI
+linuxmng --cli     # snapshot único em texto
+linuxmngd &        # inicia o daemon em segundo plano
+linuxmng --daemon  # consulta o daemon via IPC
 ```
 
-`make install` defaults to `~/.local/bin`. For a system-wide install,
-use `make install PREFIX=/usr/local` (needs `sudo`). `make uninstall`
-removes it.
+`make install` usa `~/.local/bin` por padrão; `make install PREFIX=/usr/local` faz
+instalação de sistema (precisa `sudo`). Saída redirecionada/pipeada
+(`linuxmng | less`, cron, CI) cai automaticamente no snapshot de texto.
 
-Redirected or piped output (`linuxmng | less`, cron, CI) automatically
-falls back to the text snapshot, since a full-screen UI has nowhere to
-draw.
+## Requisitos
 
-## TUI controls
+Linux x86_64, GCC ou Clang + GNU Make, `ncursesw` (para a TUI). Nada mais é preciso
+para buildar: o backend NVIDIA carrega `libnvidia-ml.so` em runtime se existir —
+nenhuma dependência de build.
 
-`1`-`9` or `Tab` to switch views, `+`/`-` to change the refresh rate,
-`q` to quit. In the Processes view: arrow keys to select, `c`/`m` to
-sort by CPU or memory, `k`/`x` to send SIGTERM/SIGKILL (confirmation
-required), `[`/`]` to renice.
+## Controles da TUI
 
-## Running the daemon as a service
+`1`-`9` ou `Tab` trocam de visão, `+`/`-` mudam a taxa de atualização, `q` sai. Na
+visão de Processos: setas selecionam, `c`/`m` ordenam por CPU/memória, `k`/`x` enviam
+SIGTERM/SIGKILL (com confirmação), `[`/`]` fazem renice.
 
-A `systemd --user` unit is included:
+## Daemon como serviço
 
 ```sh
 mkdir -p ~/.config/systemd/user
@@ -79,27 +74,16 @@ systemctl --user daemon-reload
 systemctl --user enable --now linux-system-managerd
 ```
 
-It runs as your own user — no root, no system-wide service — and is
-sandboxed (`ProtectSystem=strict`, no network access, etc.).
+Roda como o próprio usuário (sem root) e com sandbox (`ProtectSystem=strict`, sem rede).
 
-## Documentation
+## Documentação
 
-- `docs/ARCHITECTURE.md` — module layout, data flow, design rationale
-- `docs/BUILD.md` — build modes and compiler flags
-- `docs/DEVELOPMENT.md` — adding a new collector module, code style
-- `docs/SECURITY.md` — privilege model and sandboxing
-- `docs/TROUBLESHOOTING.md` — common issues
+- `docs/ARCHITECTURE.md` — layout de módulos, fluxo de dados, decisões de design
+- `docs/BUILD.md` — modos de build e flags do compilador
+- `docs/DEVELOPMENT.md` — como adicionar um novo módulo coletor
+- `docs/SECURITY.md` — modelo de privilégio e sandboxing
+- `docs/TROUBLESHOOTING.md` — problemas comuns
 
-## Design notes
+## Licença
 
-- No shelling out to other CLI tools for data — everything comes from
-  `/proc`, `/sys`, or a direct syscall.
-- A missing sensor, unreadable file, or unsupported feature degrades to
-  "N/A" instead of crashing.
-- Collectors, core logic, and the UI are separated: the TUI has no idea
-  how `/proc/stat` is formatted, and the CPU module has no idea ncurses
-  exists.
-
-## License
-
-MIT — see `LICENSE`.
+MIT — ver `LICENSE`.
